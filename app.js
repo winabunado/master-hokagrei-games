@@ -23,7 +23,7 @@ fetch("games.json")
       $("genre").append(o);
     });
 
-    addCopyOrderButton();
+    addOrderButtons();
     render();
     update();
   })
@@ -32,22 +32,34 @@ fetch("games.json")
     console.error(e);
   });
 
-function addCopyOrderButton() {
+function addOrderButtons() {
   if ($("copyOrder")) return;
 
-  const btn = document.createElement("button");
-  btn.id = "copyOrder";
-  btn.type = "button";
-  btn.textContent = "COPY ORDER FOR MESSENGER";
-  btn.style.cssText = "display:block;width:100%;margin-top:12px;background:#22d3ee;color:#061018;border:0;font-weight:900;letter-spacing:.5px;padding:14px;border-radius:10px";
-  btn.addEventListener("click", copyOrder);
-  $("clear").insertAdjacentElement("afterend", btn);
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px";
+
+  const copy = document.createElement("button");
+  copy.id = "copyOrder";
+  copy.type = "button";
+  copy.textContent = "COPY ORDER";
+  copy.style.cssText = "width:100%;background:#22d3ee;color:#061018;border:0;font-weight:900;padding:14px 8px;border-radius:10px";
+  copy.addEventListener("click", copyOrder);
+
+  const share = document.createElement("button");
+  share.id = "shareOrder";
+  share.type = "button";
+  share.textContent = "SHARE ORDER";
+  share.style.cssText = "width:100%;background:#fb3c83;color:#fff;border:0;font-weight:900;padding:14px 8px;border-radius:10px";
+  share.addEventListener("click", shareOrder);
+
+  wrap.append(copy, share);
+  $("clear").insertAdjacentElement("afterend", wrap);
 
   const note = document.createElement("p");
   note.id = "copyNote";
   note.style.cssText = "font-size:12px;color:#9aa6bb;margin:8px 0 0";
-  note.textContent = "Select your games, then copy your order and paste it into Messenger.";
-  btn.insertAdjacentElement("afterend", note);
+  note.textContent = "Select games, then copy or share your order through Messenger.";
+  wrap.insertAdjacentElement("afterend", note);
 }
 
 function render() {
@@ -135,13 +147,7 @@ function update() {
   $("barFill").style.background = size > cap ? "#fb3c83" : "";
 }
 
-async function copyOrder() {
-  if (selected.size === 0) {
-    $("copyNote").textContent = "Please select at least one game before copying your order.";
-    $("copyNote").style.color = "#fb3c83";
-    return;
-  }
-
+function buildOrderMessage() {
   const chosen = games.filter(g => selected.has(g.name));
   const total = chosen.reduce((s, g) => s + (Number(g.size) || 0), 0);
   const drive = $("drive").selectedOptions[0].textContent;
@@ -167,12 +173,23 @@ async function copyOrder() {
     "Please confirm availability, compatibility and final price. Thank you!"
   ].join("\n");
 
+  return { message, count: chosen.length };
+}
+
+async function copyOrder() {
+  const order = buildOrderMessage();
+
+  if (!order.count) {
+    showOrderNote("Please select at least one game first.", "#fb3c83");
+    return;
+  }
+
   try {
     if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(message);
+      await navigator.clipboard.writeText(order.message);
     } else {
       const ta = document.createElement("textarea");
-      ta.value = message;
+      ta.value = order.message;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
       document.body.appendChild(ta);
@@ -183,14 +200,43 @@ async function copyOrder() {
       if (!copied) throw new Error("Copy command failed");
     }
 
-    $("copyNote").textContent = "✓ Order copied! Open Messenger, choose your chat, then press and hold the message box and tap Paste.";
-    $("copyNote").style.color = "#22d3ee";
-    $("copyOrder").textContent = "✓ ORDER COPIED — PASTE IN MESSENGER";
+    showOrderNote("✓ Order copied! Open Messenger, choose a chat, then paste the message.", "#22d3ee");
+    $("copyOrder").textContent = "✓ COPIED";
   } catch (e) {
-    $("copyNote").textContent = "Copy was blocked by your browser. Please try again or use Chrome.";
-    $("copyNote").style.color = "#fb3c83";
+    showOrderNote("Copy was blocked by your browser. Try SHARE ORDER instead.", "#fb3c83");
     console.error(e);
   }
+}
+
+async function shareOrder() {
+  const order = buildOrderMessage();
+
+  if (!order.count) {
+    showOrderNote("Please select at least one game first.", "#fb3c83");
+    return;
+  }
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: "Master HokaGrei Game Drive Order",
+        text: order.message
+      });
+      showOrderNote("Share menu opened. Choose Messenger and select the recipient.", "#22d3ee");
+    } catch (e) {
+      if (e.name !== "AbortError") {
+        showOrderNote("Sharing is unavailable in this browser. Use COPY ORDER instead.", "#fb3c83");
+        console.error(e);
+      }
+    }
+  } else {
+    showOrderNote("This browser does not support direct sharing. Use COPY ORDER, then paste into Messenger.", "#fb3c83");
+  }
+}
+
+function showOrderNote(message, color) {
+  $("copyNote").textContent = message;
+  $("copyNote").style.color = color;
 }
 
 ["search", "genre", "mode"].forEach(id =>
@@ -203,13 +249,6 @@ $("clear").onclick = () => {
   selected.clear();
   render();
   update();
-
-  if ($("copyNote")) {
-    $("copyNote").textContent = "Selection cleared. Choose games to create a new order.";
-    $("copyNote").style.color = "#9aa6bb";
-  }
-
-  if ($("copyOrder")) {
-    $("copyOrder").textContent = "COPY ORDER FOR MESSENGER";
-  }
+  if ($("copyNote")) showOrderNote("Selection cleared. Choose games to create a new order.", "#9aa6bb");
+  if ($("copyOrder")) $("copyOrder").textContent = "COPY ORDER";
 };
